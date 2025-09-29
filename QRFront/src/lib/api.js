@@ -2,12 +2,12 @@
 import axios from "axios";
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://test-latest-yibd.onrender.com',
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8080",
 });
 
 // 토큰 키 상수
 export const ACCESS_KEY = 'access_token';
-export const REFRESH_KEY = 'refresh_token'; // 쓰지 않으면 제거 가능
+export const REFRESH_KEY = 'refresh_token';
 
 // 모든 요청에 토큰 자동 첨부 (로그인/회원가입 제외)
 api.interceptors.request.use((config) => {

@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { Typography, Form, Input, Button, Alert, Card } from "antd";
-import { loginRequest } from "@/features/user/UserSlice";
+import { loginRequest } from "@/features/user/userSlice";
 
 const { Title } = Typography;
 
@@ -18,7 +18,7 @@ function GlobalReset() {
   );
 }
 
-export default function APP() {
+export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { token, loading, error, booting, myRole } = useSelector((s) => s.user || {});

@@ -1,6 +1,11 @@
-import { all, fork } from 'redux-saga/effects';
-import UserSaga from '../features/user/UserSaga';
+// store/rootSaga.js
+import { all } from "redux-saga/effects";
+import userSaga from "@/features/user/UserSaga";
+import { qrSaga } from "@/features/qr/QrSaga";
 
 export default function* rootSaga() {
-  yield all([fork(UserSaga)]);
+  yield all([
+    qrSaga(),
+    userSaga(),
+  ]);
 }

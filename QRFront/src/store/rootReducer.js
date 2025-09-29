@@ -1,8 +1,10 @@
 import { combineReducers } from '@reduxjs/toolkit';
-import UserReducer from '../features/user/UserSlice';
+import userReducer from '@/features/user/userSlice';
+import qrReducer from '@/features/qr/qrSlice';
 
 const rootReducer = combineReducers({
-  user: UserReducer,
+  user: userReducer,
+  qr: qrReducer,
 });
 
 export default rootReducer;

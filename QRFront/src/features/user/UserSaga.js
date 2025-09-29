@@ -1,6 +1,6 @@
 import { call, put, takeLatest, delay } from "redux-saga/effects";
 import { message } from "antd";
-import { loginRequest, loginSuccess, loginFailure, bootstrapRequest, bootstrapSuccess, bootstrapFailure } from "./UserSlice";
+import { loginRequest, loginSuccess, loginFailure, bootstrapRequest, bootstrapSuccess, bootstrapFailure } from "./userSlice";
 import { api } from "../../lib/api";
 
 const ACCESS_KEY = "access_token";
@@ -28,7 +28,10 @@ function* handleLogin(action) {
             const token = "dev-mock-token";
             setAuthHeader(token);
             localStorage.setItem(ACCESS_KEY, token);
+            localStorage.setItem('myRole', JSON.stringify(myRole));
             yield put(loginSuccess({ myRole, token }));
+            yield put(bootstrapSuccess());
+
             message.success(`로그인 성공. 데이터 유출에 조심해주세요.`);
             return;
         }
@@ -51,9 +54,11 @@ function* handleLogin(action) {
         // 내 정보 조회
         const meRes = yield call([api, api.get], "/api/user/me");
         const myRole = meRes?.data || null;
+        localStorage.setItem('myRole', JSON.stringify(myRole));
+
         yield put(loginSuccess({ myRole, token: accessToken }));
         message.success(`로그인 성공. 데이터 유출에 조심해주세요.`);
-
+        yield put(bootstrapSuccess());
     } catch (err) {
         const msg = getErrMsg(err, "아이디 또는 비밀번호를 확인해 주세요.");
         yield put(loginFailure(msg));
@@ -95,7 +100,7 @@ function* handleBootstrap() {
     }
 }
 
-export default function* UserSaga() {
+export default function* userSaga() {
     yield takeLatest(loginRequest.type, handleLogin);
     yield takeLatest(bootstrapRequest.type, handleBootstrap);
 }
