@@ -9,44 +9,35 @@ const initialState = {
     lastSavedAt: null,
     lastSavedCount: 0,
 
-    // 🔹 목록(관리자 조회) - 서버 페이징
+    // 🔹 목록(관리자 조회) — 서버에는 page만 보냄 (0-based)
     list: {
         items: [],
         loading: false,
         error: null,
-        page: 1,
-        pageSize: 20,
-        total: 0,
-        nextCursor: null,
-        sortBy: null,
-        sortDir: null, // 'asc' | 'desc'
-        filters: {},
+        page: 0,   // 0-based
+        total: 0,  // 서버가 주면 갱신, 아니면 0 유지
     },
 
-    // 🔎 날짜 검색 모달 전용
+    // 🔎 날짜 검색 모달 — page만, + 조건 유지용 filters
     search: {
         open: false,
         items: [],
         loading: false,
         error: null,
-        page: 1,
-        pageSize: 10,
+        page: 0,         // 0-based
         total: 0,
-        nextCursor: null,
-        filters: {}, // 마지막 검색 파라미터 기억
+        filters: {},     // 날짜 범위 등 검색 조건
     },
 
-    // 🔴 시리얼 검색 모달 전용
+    // 🔴 시리얼 검색 모달 — page만, + 조건 유지용 filters(예: { serial })
     searchSerial: {
         open: false,
         items: [],
         loading: false,
         error: null,
-        page: 1,
-        pageSize: 10,
+        page: 0,         // 0-based
         total: 0,
-        nextCursor: null,
-        filters: {}, // { serialFrom, serialTo }
+        filters: {},     // { serial } 등
     },
 };
 
@@ -73,39 +64,38 @@ const qrSlice = createSlice({
         },
         qrUpdateRequest(state) { state.saving = true; state.error = null; },
         qrUpdateSuccess(state, action) {
-            const updated = action.payload;
-            const serial = updated.serial ?? updated.code;
-            const idx = state.items.findIndex((x) => (x.serial ?? x.code) === serial);
-            if (idx >= 0) state.items[idx] = { ...state.items[idx], ...updated };
-            state.saving = false;
+            const p = action.payload;
+            const idx = state.items.findIndex(it => it.serial === p.serial || it.key === p.key);
+            if (idx >= 0) {
+                const next = state.items.slice();       // 배열 참조 교체
+                next[idx] = { ...next[idx], ...p };     // 행 참조 교체
+                state.items = next;
+            }
         },
         qrUpdateFailure(state, action) { state.saving = false; state.error = action.payload; },
 
-        // --- 🔹 목록(관리자 조회) ---
+        // --- 🔹 목록(관리자 조회) — page만 관리 ---
         qrListRequest(state, action) {
-            const { page, pageSize, sorter, filters, append } = action.payload || {};
+            const { page, append } = action.payload || {};
             state.list.loading = true;
             state.list.error = null;
-            if (page) state.list.page = page;
-            if (pageSize) state.list.pageSize = pageSize;
-            if (filters) state.list.filters = { ...state.list.filters, ...filters };
-            if (sorter) {
-                state.list.sortBy = sorter.field || sorter.columnKey || sorter.dataIndex || null;
-                state.list.sortDir = sorter.order === "ascend" ? "asc" : sorter.order === "descend" ? "desc" : null;
-            }
-            if (!append) state.list.items = [];
+            if (typeof page === "number") state.list.page = page; // 0도 허용
+            if (!append) state.list.items = []; // 새 조회면 비움
         },
         qrListSuccess(state, action) {
-            const { items, page, pageSize, total, nextCursor, append } = action.payload;
+            const { items, page, total, append } = action.payload || {};
             state.list.items = append ? state.list.items.concat(items) : items;
-            if (page) state.list.page = page;
-            if (pageSize) state.list.pageSize = pageSize;
-            state.list.total = typeof total === "number" ? total : state.list.total;
-            state.list.nextCursor = nextCursor ?? null;
+            if (typeof page === "number") state.list.page = page;
+            if (typeof total === "number") state.list.total = total;
             state.list.loading = false;
         },
-        qrListFailure(state, action) { state.list.loading = false; state.list.error = action.payload || "목록 조회 실패"; },
-        qrListReset(state) { state.list = { ...initialState.list }; },
+        qrListFailure(state, action) {
+            state.list.loading = false;
+            state.list.error = action.payload || "목록 조회 실패";
+        },
+        qrListReset(state) {
+            state.list = { ...initialState.list };
+        },
 
         // --- 🔎 날짜 검색 모달 ---
         qrSearchOpen(state, action) {
@@ -114,23 +104,23 @@ const qrSlice = createSlice({
         },
         qrSearchClose(state) { state.search.open = false; },
         qrSearchRequest(state, action) {
-            const { page, pageSize, filters } = action.payload || {};
+            const { page, filters } = action.payload || {};
             state.search.loading = true;
             state.search.error = null;
-            if (page) state.search.page = page;
-            if (pageSize) state.search.pageSize = pageSize;
+            if (typeof page === "number") state.search.page = page; // 0 허용
             if (filters) state.search.filters = filters;
         },
         qrSearchSuccess(state, action) {
-            const { items, page, pageSize, total, nextCursor } = action.payload;
+            const { items, page, total } = action.payload || {};
             state.search.items = items;
-            if (page) state.search.page = page;
-            if (pageSize) state.search.pageSize = pageSize;
-            state.search.total = typeof total === "number" ? total : state.search.total;
-            state.search.nextCursor = nextCursor ?? null;
+            if (typeof page === "number") state.search.page = page;
+            if (typeof total === "number") state.search.total = total;
             state.search.loading = false;
         },
-        qrSearchFailure(state, action) { state.search.loading = false; state.search.error = action.payload || "검색 실패"; },
+        qrSearchFailure(state, action) {
+            state.search.loading = false;
+            state.search.error = action.payload || "검색 실패";
+        },
         qrSearchReset(state) { state.search = { ...initialState.search }; },
 
         // --- 🔴 시리얼 검색 모달 ---
@@ -140,23 +130,23 @@ const qrSlice = createSlice({
         },
         qrSerialClose(state) { state.searchSerial.open = false; },
         qrSerialRequest(state, action) {
-            const { page, pageSize, filters } = action.payload || {};
+            const { page, filters } = action.payload || {};
             state.searchSerial.loading = true;
             state.searchSerial.error = null;
-            if (page) state.searchSerial.page = page;
-            if (pageSize) state.searchSerial.pageSize = pageSize;
+            if (typeof page === "number") state.searchSerial.page = page; // 0 허용
             if (filters) state.searchSerial.filters = filters;
         },
         qrSerialSuccess(state, action) {
-            const { items, page, pageSize, total, nextCursor } = action.payload;
+            const { items, page, total } = action.payload || {};
             state.searchSerial.items = items;
-            if (page) state.searchSerial.page = page;
-            if (pageSize) state.searchSerial.pageSize = pageSize;
-            state.searchSerial.total = typeof total === "number" ? total : state.searchSerial.total;
-            state.searchSerial.nextCursor = nextCursor ?? null;
+            if (typeof page === "number") state.searchSerial.page = page;
+            if (typeof total === "number") state.searchSerial.total = total;
             state.searchSerial.loading = false;
         },
-        qrSerialFailure(state, action) { state.searchSerial.loading = false; state.searchSerial.error = action.payload || "시리얼 검색 실패"; },
+        qrSerialFailure(state, action) {
+            state.searchSerial.loading = false;
+            state.searchSerial.error = action.payload || "시리얼 검색 실패";
+        },
         qrSerialReset(state) { state.searchSerial = { ...initialState.searchSerial }; },
     },
 });
@@ -164,8 +154,14 @@ const qrSlice = createSlice({
 export const {
     qrSaveRequest, qrSaveSuccess, qrSaveFailure, qrClear,
     qrUpdateRequest, qrUpdateSuccess, qrUpdateFailure,
+
+    // list
     qrListRequest, qrListSuccess, qrListFailure, qrListReset,
+
+    // date search
     qrSearchOpen, qrSearchClose, qrSearchRequest, qrSearchSuccess, qrSearchFailure, qrSearchReset,
+
+    // serial search
     qrSerialOpen, qrSerialClose, qrSerialRequest, qrSerialSuccess, qrSerialFailure, qrSerialReset,
 } = qrSlice.actions;
 

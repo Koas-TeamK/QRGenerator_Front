@@ -79,7 +79,7 @@ export default function QRGenerator() {
 
                 // 2) 백엔드 QrRequestDto 배열로 변환 (✅ qrUrl 포함)
                 const dtos = slice.map((it, idx) => ({
-                    imageUrl: base64Bodies[idx],  // "data:image/png;base64,..." 문자열
+                    image: base64Bodies[idx],  // "data:image/png;base64,..." 문자열
                     qrUrl: it.url,            // ✅ 추가된 필드
                     serial: it.code,          // = code
                     //message,                  
