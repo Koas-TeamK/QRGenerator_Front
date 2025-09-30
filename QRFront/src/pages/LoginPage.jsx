@@ -25,7 +25,7 @@ export default function LoginPage() {
   const onFinish = (values) => dispatch(loginRequest(values));
 
   useEffect(() => {
-    if (!booting && myRole && token) navigate("/main", { replace: true });
+    if (!booting && !myRole && !token) navigate("/", { replace: true });
   }, [booting, myRole, token, navigate]);
 
   return (
@@ -76,7 +76,7 @@ export default function LoginPage() {
             >
               <Form.Item
                 label="아이디"
-                name="username"
+                name="email"
                 rules={[{ required: true, message: "아이디를 입력해주세요." }]}
               >
                 <Input placeholder="아이디를 입력해주세요." autoFocus />

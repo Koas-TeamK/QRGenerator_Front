@@ -1,34 +1,28 @@
-// components/QRSerialSearchModal.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+// components/QRDateSearchModal.jsx
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
-    Modal, Input, Space, Table, Tag, Typography, Tooltip, Button, Image, Form,
-    DatePicker, Popconfirm, message as antdMessage
+    Modal, Form, DatePicker, Row, Col,
+    Button, Space, Table, Tag, Typography, Tooltip, Image, Input, Popconfirm,
+    message as antdMessage
 } from "antd";
 import {
-    NumberOutlined, SearchOutlined, LinkOutlined, CopyOutlined,
+    CalendarOutlined, SearchOutlined, ReloadOutlined, LinkOutlined, CopyOutlined,
     EditOutlined, CheckOutlined, CloseOutlined, DownloadOutlined
 } from "@ant-design/icons";
-import { useDispatch, useSelector } from "react-redux";
 import dayjs from "dayjs";
+import { useDispatch, useSelector } from "react-redux";
 import {
-    qrSearchClose, qrSearchRequest, selectQrSearch,
+    qrSearchRequest, qrSearchReset, selectQrSearch,
     qrUpdateRequest, qrUpdateSuccess
 } from "@/features/qr/qrSlice";
 
+const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
-const toImageSrc = (val) =>
-    val ? (val.startsWith("http") ? val : `data:image/png;base64,${val}`) : "";
+const toImageSrc = (val) => (val ? (val.startsWith("http") ? val : `data:image/png;base64,${val}`) : "");
 
-// 1~4자리 숫자만 허용 (AppLayout 형식과 동일)
-const parseSerial = (value) => {
-    const s = String(value || "").trim();
-    if (!/^\d{1,4}$/.test(s)) return null;
-    return s; // 필요 시 s.padStart(4, "0") 가능
-};
-
-// QRList와 동일한 인라인 편집 셀
-const EditableCell = ({ editing, dataIndex, title, record, children, ...rest }) => {
+// 인라인 편집 셀 (편집 Form 전용)
+const EditableCell = ({ editing, dataIndex, children, ...rest }) => {
     let inputNode = null;
     if (dataIndex === "message") inputNode = <Input placeholder="메시지" maxLength={200} />;
     else if (dataIndex === "createdDate") inputNode = <DatePicker format="YYYY-MM-DD" style={{ width: "100%" }} />;
@@ -49,36 +43,65 @@ const EditableCell = ({ editing, dataIndex, title, record, children, ...rest }) 
     );
 };
 
-export default function QRSerialSearchModal() {
+export default function QRDateSearchModal({ open, onClose }) {
     const dispatch = useDispatch();
-    const { open, items = [], loading, error } = useSelector(selectQrSearch);
-
-    // 권한: ADMIN만 수정 가능
+    const { items = [], loading, error } = useSelector(selectQrSearch);
     const { myRole } = useSelector((s) => s.user || {});
     const role = typeof myRole === "string" ? myRole : myRole?.role;
     const isAdmin = role === "ADMIN";
 
-    // 로컬 버퍼(표시용) & 에디팅 상태
+    // 서로 다른 Form 인스턴스
+    const [filterForm] = Form.useForm(); // 날짜 범위 선택용
+    const [editForm] = Form.useForm();   // 테이블 인라인 편집용
+
+    // 로컬 표시 버퍼
     const [rows, setRows] = useState([]);
     useEffect(() => { setRows(items); }, [items]);
 
-    const [form] = Form.useForm();
-    const [editingKey, setEditingKey] = useState("");
-    const isEditing = (record) => record.serial === editingKey;
+    // 열릴 때 초기화
+    useEffect(() => {
+        if (!open) return;
+        dispatch(qrSearchReset());
+        filterForm.setFieldsValue({ dateRange: [] });
+    }, [open, dispatch, filterForm]);
 
-    // 검색: payload = { serial }
-    const handleSearch = useCallback((value) => {
-        const serial = parseSerial(value);
-        if (!serial) {
-            antdMessage.warning("형식: 숫자 1~4자리 (예: 0001)");
+    // startDate/endDate만 전송
+    const onSearch = useCallback(async () => {
+        const vals = await filterForm.validateFields().catch(() => null);
+        if (!vals) return;
+
+        const dr = vals.dateRange || [];
+        const start = dr[0] ? dr[0].format("YYYY-MM-DD") : undefined;
+        const end = dr[1] ? dr[1].format("YYYY-MM-DD") : undefined;
+
+        if (!start && !end) {
+            antdMessage.warning("날짜를 선택하세요 (시작 또는 종료)");
             return;
         }
-        dispatch(qrSearchRequest({ serial }));
-    }, [dispatch]);
 
-    // 복사 / 이미지 다운로드
+        const payload = {};
+        if (start) payload.startDate = start;
+        if (end) payload.endDate = end;
+
+        //console.log("[QRDateSearchModal] onSearch ▶ payload:", payload);
+        dispatch(qrSearchRequest(payload));
+    }, [dispatch, filterForm]);
+
+    const onReset = () => {
+        filterForm.resetFields();
+        dispatch(qrSearchReset());
+        //console.log("[QRDateSearchModal] reset");
+    };
+
+    const quickDate = (type) => {
+        const today = dayjs();
+        if (type === "today") filterForm.setFieldsValue({ dateRange: [today, today] });
+        if (type === "7d") filterForm.setFieldsValue({ dateRange: [today.subtract(6, "day"), today] });
+        if (type === "30d") filterForm.setFieldsValue({ dateRange: [today.subtract(29, "day"), today] });
+    };
+
     const copy = async (text) => {
-        try { await navigator.clipboard.writeText(text); antdMessage.success("복사 완료"); }
+        try { await navigator.clipboard.writeText(text); antdMessage.success("복사됨"); }
         catch { window.prompt("Copy this:", text); }
     };
 
@@ -104,9 +127,12 @@ export default function QRSerialSearchModal() {
         }
     };
 
-    // 편집 핸들러 (QRList와 동일한 흐름)
+    // 인라인 편집
+    const [editingKey, setEditingKey] = useState("");
+    const isEditing = (record) => record.serial === editingKey;
+
     const edit = (record) => {
-        form.setFieldsValue({
+        editForm.setFieldsValue({
             message: record.message,
             createdDate: record.createdDate ? dayjs(record.createdDate) : null,
         });
@@ -116,7 +142,7 @@ export default function QRSerialSearchModal() {
 
     const save = async (serialKey) => {
         try {
-            const row = await form.validateFields();
+            const row = await editForm.validateFields();
             const createdDateStr = row.createdDate ? row.createdDate.format("YYYY-MM-DD") : "";
             const original = rows.find((d) => d.serial === serialKey);
             if (!original) return;
@@ -131,21 +157,15 @@ export default function QRSerialSearchModal() {
                 key: original.key,
             };
 
-            // 1) 로컬 반영
             setRows((prev) => prev.map((r) => (r.serial === serialKey ? { ...r, ...dto } : r)));
             setEditingKey("");
-
-            // 2) 스토어 낙관적 패치 (slice는 top-level items만 건드리지만 일단 동일하게 사용)
             dispatch(qrUpdateSuccess(dto));
-
-            // 3) 서버 동기화
             dispatch(qrUpdateRequest(dto));
-        } catch {
-            // no-op
-        }
+            //console.log("[QRDateSearchModal] save ▶ dto:", dto);
+        } catch { /* no-op */ }
     };
 
-    // QRList와 동일한 열 구성 + Action
+    // 컬럼 (Item 제거, QRList와 동일)
     const columns = useMemo(() => ([
         {
             title: "QR",
@@ -211,12 +231,7 @@ export default function QRSerialSearchModal() {
                 const editing = isEditing(record);
                 return editing ? (
                     <Space>
-                        <Button
-                            type="primary"
-                            icon={<CheckOutlined />}
-                            size="small"
-                            onClick={() => save(record.serial)}
-                        >
+                        <Button type="primary" icon={<CheckOutlined />} size="small" onClick={() => save(record.serial)}>
                             저장
                         </Button>
                         <Popconfirm title="수정 취소?" onConfirm={cancel}>
@@ -245,9 +260,7 @@ export default function QRSerialSearchModal() {
             ...col,
             onCell: (record) => ({
                 record,
-                inputType: col.dataIndex === "createdDate" ? "date" : "text",
                 dataIndex: col.dataIndex,
-                title: col.title,
                 editing: isEditing(record),
             }),
         };
@@ -256,29 +269,59 @@ export default function QRSerialSearchModal() {
     return (
         <Modal
             title={
-                <Space size="middle" style={{ width: "100%", justifyContent: "space-between" }}>
-                    <Space>
-                        <NumberOutlined />
-                        <span>Serial 검색</span>
-                        <Text type="secondary">{rows?.length ? `총 ${rows.length.toLocaleString()}건` : null}</Text>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                    <Space size="middle">
+                        <CalendarOutlined />
+                        <span style={{ fontWeight: 600 }}>QR 검색 (날짜)</span>
+                        <Text type="secondary">{items.length ? `총 ${items.length.toLocaleString()}건` : null}</Text>
                     </Space>
-                    {/* 모달 헤더 검색 */}
-                    <Input.Search
-                        placeholder="시리얼: 4자리수 입력"
-                        enterButton={<><SearchOutlined /> 검색</>}
-                        onSearch={handleSearch}
-                        allowClear
-                        style={{ minWidth: 280, width: 360 }}
-                    />
-                </Space>
+                    <Space size="small" wrap>
+                        <Button size="small" type="text" onClick={() => quickDate("today")}>오늘</Button>
+                        <Button size="small" type="text" onClick={() => quickDate("7d")}>최근 7일</Button>
+                        <Button size="small" type="text" onClick={() => quickDate("30d")}>최근 30일</Button>
+                    </Space>
+                </div>
             }
             open={open}
-            onCancel={() => dispatch(qrSearchClose())}
-            width={960}
+            onCancel={onClose}
+            width={1000}
             destroyOnClose
             footer={null}
         >
-            <Form form={form} component={false}>
+            {/* 날짜 범위 선택 */}
+            <div style={{ padding: 12, border: "1px solid #f0f0f0", borderRadius: 12, background: "#fafafa", marginBottom: 12 }}>
+                <Form
+                    form={filterForm}
+                    layout="vertical"
+                    onFinish={() => {
+                        //console.log("[QRDateSearchModal] form submit");
+                        onSearch();
+                    }}
+                >
+                    <Row gutter={12} align="bottom">
+                        <Col xs={24} md={18}>
+                            <Form.Item
+                                label={<Space size={6} style={{ fontWeight: 500 }}><CalendarOutlined /> 출고날짜 범위</Space>}
+                                name="dateRange"
+                                tooltip="하나만 선택하면 해당 일자만 검색"
+                            >
+                                <RangePicker style={{ width: "100%" }} format="YYYY-MM-DD" allowEmpty={[true, true]} allowClear />
+                            </Form.Item>
+                        </Col>
+                        <Col xs={24} md={6} style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <Space>
+                                <Button icon={<ReloadOutlined />} onClick={onReset}>초기화</Button>
+                                <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
+                                    검색
+                                </Button>
+                            </Space>
+                        </Col>
+                    </Row>
+                </Form>
+            </div>
+
+            {/* 결과 테이블 (페이지네이션 제거) */}
+            <Form form={editForm} component={false}>
                 <Table
                     style={{ marginTop: 8 }}
                     rowKey="serial"
@@ -288,9 +331,20 @@ export default function QRSerialSearchModal() {
                     dataSource={rows}
                     loading={loading}
                     pagination={false}
+                    scroll={{ y: 420 }}
+                    sticky
                 />
             </Form>
-            {error && <div style={{ color: '#d4380d', marginTop: 8 }}>오류: {String(error)}</div>}
+
+            {error && (
+                <div style={{
+                    color: '#d4380d', marginTop: 12,
+                    border: "1px solid #ffd8bf", background: "#fff2e8",
+                    borderRadius: 8, padding: 8
+                }}>
+                    오류: {String(error)}
+                </div>
+            )}
         </Modal>
     );
 }

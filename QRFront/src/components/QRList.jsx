@@ -11,6 +11,7 @@ import {
 import dayjs from "dayjs";
 
 import { selectQrList, qrListRequest, qrUpdateRequest, qrUpdateSuccess, } from "@/features/qr/qrSlice";
+import { toImageSrc } from "@/lib/image";
 
 const { Text } = Typography;
 
@@ -35,9 +36,9 @@ const EditableCell = ({ editing, dataIndex, title, inputType, record, children, 
     );
 };
 
-export default function QRList() {
+export default function QRList({ isAdmin }) {
     const dispatch = useDispatch();
-
+    //console.log("[QRList] isAdmin -> ", isAdmin)
     // page는 0-based로 관리
     const { items = [], loading, error, page, total } = useSelector(selectQrList);
 
@@ -80,16 +81,18 @@ export default function QRList() {
         catch { window.prompt("Copy this:", text); }
     };
 
+    // ✅ 다운로드도 헤더를 붙인 src로 처리
     const downloadImage = async (record) => {
         const { imageUrl, serial } = record;
         if (!imageUrl) { antdMessage.warning("이미지가 없습니다."); return; }
+        const src = toImageSrc(imageUrl);
         const filename = `qr_${serial || "image"}.png`;
         try {
-            if (imageUrl.startsWith("data:image")) {
+            if (src.startsWith("data:image")) {
                 const a = document.createElement("a");
-                a.href = imageUrl; a.download = filename; a.click();
+                a.href = src; a.download = filename; a.click();
             } else {
-                const res = await fetch(imageUrl, { mode: "cors" });
+                const res = await fetch(src, { mode: "cors" });
                 const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
@@ -97,7 +100,7 @@ export default function QRList() {
                 URL.revokeObjectURL(url);
             }
         } catch {
-            window.open(imageUrl, "_blank", "noopener,noreferrer");
+            window.open(src, "_blank", "noopener,noreferrer");
         }
     };
 
@@ -151,7 +154,7 @@ export default function QRList() {
             render: (src, record) =>
                 src ? (
                     <Image
-                        src={src}
+                        src={toImageSrc(src)}
                         alt={record.serial}
                         width={56}
                         height={56}
@@ -213,7 +216,10 @@ export default function QRList() {
                     </Space>
                 ) : (
                     <Space wrap>
-                        <Button icon={<EditOutlined />} size="small" onClick={() => edit(record)}>수정</Button>
+                        {
+                            isAdmin &&
+                            <Button icon={<EditOutlined />} size="small" onClick={() => edit(record)}>수정</Button>
+                        }
                         <Button icon={<DownloadOutlined />} size="small" onClick={() => downloadImage(record)}>이미지 다운로드</Button>
                     </Space>
                 );

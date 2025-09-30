@@ -83,13 +83,13 @@ export default function QRGenerator() {
                     qrUrl: it.url,            // ✅ 추가된 필드
                     serial: it.code,          // = code
                     //message,                  
-                    createdDate: "2025-09-29",
+                    createdDate: "",
                     itemName: "maru_on",
                 }));
 
                 // 3) 사가로 JSON 배열 전송
                 dispatch(qrSaveRequest(dtos));
-                console.log(dtos)
+                //console.log(dtos)
 
                 const done = Math.min(i + slice.length, items.length);
                 setProgress(Math.round((done / items.length) * 100));

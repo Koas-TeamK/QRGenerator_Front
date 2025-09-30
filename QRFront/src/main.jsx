@@ -19,24 +19,20 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <ConfigProvider locale={koKR} theme={{ token: { colorPrimary: '#0c5a68ff' } }}>
         <BrowserRouter>
           <Routes>
-            {/* 루트는 로그인으로 보냄 */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
-
             {/* 로그인(비보호) */}
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<LoginPage />} />
 
             {/* 보호 구역 */}
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 {/* 보호 구역 내부는 상대경로로 */}
-                <Route path="/main" element={<MainPage />} />
-                <Route path="/make" element={<QRGeneratorPage />} />
+                <Route path="/generate" element={<QRGeneratorPage />} />
                 <Route path="/list" element={<MainPage />} />
               </Route>
             </Route>
 
             {/* 나머지는 전부 로그인으로 */}
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </ConfigProvider>

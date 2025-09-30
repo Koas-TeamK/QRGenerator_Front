@@ -33,7 +33,6 @@ const userSlice = createSlice({
             state.error = null;
         },
         loginSuccess(state, action) {
-            // payload는 보통 { myRole, token } 형태 (또는 { user/me/role })
             const p = action.payload || {};
             const role =
                 p.myRole ?? p.role ?? p.user ?? p.me ?? null;
@@ -44,13 +43,9 @@ const userSlice = createSlice({
             state.token = token;
             state.error = null;
 
-            //로컬스토리지에도 저장(하드 리다이렉트/새로고침 대응)
             if (token) localStorage.setItem(ACCESS_KEY, token);
             if (role !== undefined) localStorage.setItem(ROLE_KEY, JSON.stringify(role));
-
-            // 하드 리다이렉트 계속 쓰고 싶다면 유지
-            // (소프트 네비게이션을 쓰려면 이 줄은 지우고 컴포넌트에서 navigate 사용)
-            window.location.assign("/main");
+            window.location.assign("/list");
         },
         loginFailure(state, action) {
             state.loading = false;
