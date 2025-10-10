@@ -1,19 +1,22 @@
 // src/lib/api.js
 import axios from "axios";
 
+export const ACCESS_KEY = "access_token";
+export const REFRESH_KEY = "refresh_token";
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "192.168.219.107:8080",
+  baseURL: "",
+  withCredentials: true,
 });
 
-// 토큰 키 상수
-export const ACCESS_KEY = 'access_token';
-export const REFRESH_KEY = 'refresh_token';
-
-// 모든 요청에 토큰 자동 첨부 (로그인/회원가입 제외)
+// --- 요청 인터셉터: 로그인 같은 auth 엔드포인트엔 토큰 안 붙임 ---
 api.interceptors.request.use((config) => {
-  const url = config.url || '';
-  const isAuthPath =
-    url.includes('/api/user/login');
+  const url = config.url || "";
+  const AUTHLESS_PATHS = [
+    "/api/user/login",
+    "/api/admin/login",
+  ];
+  const isAuthPath = AUTHLESS_PATHS.some((p) => url.includes(p));
 
   if (!isAuthPath) {
     const t = localStorage.getItem(ACCESS_KEY);
@@ -27,14 +30,27 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// 필요 시 401 처리(리프레시 토큰 없으면 주석 유지)
-// api.interceptors.response.use(
-//   (res) => res,
-//   (err) => {
-//     if (err?.response?.status === 401) {
-//       localStorage.removeItem(ACCESS_KEY);
-//       localStorage.removeItem('me');
-//     }
-//     return Promise.reject(err);
-//   }
-// );
+// --- 응답 인터셉터: 서버가 새 토큰을 헤더로 주면 교체(갈아끼우기) ---
+api.interceptors.response.use(
+  (res) => {
+    // Axios는 헤더 키를 소문자로 normalize 함
+    const auth = res?.headers?.authorization || res?.headers?.Authorization;
+    if (auth && auth.startsWith("Bearer ")) {
+      const nextToken = auth.slice(7);
+      // 로컬/기본헤더 교체
+      localStorage.setItem(ACCESS_KEY, nextToken);
+      api.defaults.headers.common.Authorization = `Bearer ${nextToken}`;
+      // console.debug("[api] Access token refreshed from response header");
+    }
+    return res;
+  },
+  async (err) => {
+    // (옵션) 401 공통 처리
+    // if (err?.response?.status === 401) {
+    //   localStorage.removeItem(ACCESS_KEY);
+    //   localStorage.removeItem(REFRESH_KEY);
+    //   // 필요시 로그인 페이지로 보내기 등
+    // }
+    return Promise.reject(err);
+  }
+);
