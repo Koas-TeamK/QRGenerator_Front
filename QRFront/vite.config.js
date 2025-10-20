@@ -9,4 +9,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://13.211.211.70:8080',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  }
 });

@@ -9,7 +9,6 @@ export const api = axios.create({
   withCredentials: true,
 });
 
-// --- 요청 인터셉터: 로그인 같은 auth 엔드포인트엔 토큰 안 붙임 ---
 api.interceptors.request.use((config) => {
   const url = config.url || "";
   const AUTHLESS_PATHS = [

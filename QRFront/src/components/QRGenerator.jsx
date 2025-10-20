@@ -1,24 +1,28 @@
-// QRGenerator.jsx
+// src/pages/QRGenerator.jsx
 import { useMemo, useState, useCallback } from "react";
 import { useDispatch } from "react-redux";
 import QR from "qrcode";
 import { qrSaveRequest } from "@/features/qr/qrSlice";
 import { makeTokenUrlSafe } from "@/utils/crypto";
 
+// 간단 sleep
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export default function QRGenerator() {
     const dispatch = useDispatch();
 
+    // ====== 상태 ======
     const [baseUrl, setBaseUrl] = useState(
-        import.meta.env.VITE_QR_BASE_URL ?? "https://yourdomain.com/r"
+        import.meta.env.VITE_QR_BASE_URL ?? "www.team-koas.com"
     );
     const [start, setStart] = useState(1);
     const [end, setEnd] = useState(20);
     const [showAll, setShowAll] = useState(false);
 
-    // 진행 상태
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0); // 0~100
 
+    // ====== 유틸 ======
     const pad4 = (n) => String(n).padStart(4, "0");
 
     const items = useMemo(() => {
@@ -28,41 +32,34 @@ export default function QRGenerator() {
         const hi = Math.max(s, e);
         const temp = [];
         for (let i = lo; i <= hi; i++) {
-            const code = pad4(i);              // = serial
+            const code = pad4(i); // = serial
             const token = makeTokenUrlSafe(code);
-            const url = `${baseUrl.replace(/\/$/, "")}/maruon/serial=${code}?token=${encodeURIComponent(token)}`;
-            temp.push({ code, token, url });   // code=serial
+            const url = `${baseUrl.replace(/\/$/, "")}/maruon/serial=${code}?token=${encodeURIComponent(
+                token
+            )}`;
+            temp.push({ code, token, url });
         }
         return temp;
     }, [baseUrl, start, end]);
 
     const preview = showAll ? items : items.slice(0, 50);
 
-    // DataURL → Blob
-    const dataUrlToBlob = async (dataUrl) => {
-        const res = await fetch(dataUrl);
-        return await res.blob();
-    };
-
-    // 오프스크린: URL로 QR 이미지 생성 → Blob
-    const makeQrBlobFromUrl = async (text, size = 256) => {
-        const dataUrl = await QR.toDataURL(text, { width: size, margin: 2 });
-        return await dataUrlToBlob(dataUrl);
-    };
-
-    // dataURL에서 헤더 제거하고 베이스64 본문만 추출
-    const toBase64Only = async (text, size = 256) => {
-        const dataUrl = await QR.toDataURL(text, { width: size, margin: 2 }); // "data:image/png;base64,AAAA..."
+    // DataURL → base64 본문만(용량 축소: width=128, margin=1)
+    const toBase64Only = async (text, size = 128) => {
+        const dataUrl = await QR.toDataURL(text, { width: size, margin: 1 });
         const idx = dataUrl.indexOf(",");
-        return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl; // "AAAA..." (헤더 제거)
+        return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl; // "AAAA..."만 반환
     };
 
-
-    const toDataUrl = (text, size = 256) => QR.toDataURL(text, { width: size, margin: 2 });
-    // ⚔️ 전량 일괄 전송(JSON) — QrRequestDto[]
+    // ====== 업로드(청크 + 간격 / API는 그대로 dispatch 사용) ======
     const uploadAll = useCallback(async () => {
         if (items.length === 0) {
             alert("업로드할 항목이 없습니다.");
+            return;
+        }
+
+        // 안전장치: 너무 큰 배치를 한 번에 올리면 경고
+        if (items.length > 1000 && !confirm(`총 ${items.length}건입니다. 진행할까요?`)) {
             return;
         }
 
@@ -70,32 +67,33 @@ export default function QRGenerator() {
         setProgress(0);
 
         try {
-            const CHUNK = 200; // 서버 한도에 맞춰 조절
+            const CHUNK = 1;
+            const GAP_MS = 1000;
+
             for (let i = 0; i < items.length; i += CHUNK) {
                 const slice = items.slice(i, i + CHUNK);
 
-                // 1) 각 URL에 대한 QR 이미지를 dataURL로 생성
-                const base64Bodies = await Promise.all(slice.map(it => toBase64Only(it.url, 256)));
+                const base64Bodies = await Promise.all(
+                    slice.map((it) => toBase64Only(it.url, 128))
+                );
 
-                // 2) 백엔드 QrRequestDto 배열로 변환 (✅ qrUrl 포함)
                 const dtos = slice.map((it, idx) => ({
-                    image: base64Bodies[idx],  // "data:image/png;base64,..." 문자열
-                    qrUrl: it.url,            // ✅ 추가된 필드
-                    serial: it.code,          // = code
-                    //message,                  
+                    image: base64Bodies[idx],
+                    qrUrl: it.url,
+                    serial: it.code,
                     createdDate: "",
                     itemName: "maruon",
                 }));
 
-                // 3) 사가로 JSON 배열 전송
                 dispatch(qrSaveRequest(dtos));
-                //console.log(dtos)
 
                 const done = Math.min(i + slice.length, items.length);
                 setProgress(Math.round((done / items.length) * 100));
+
+                await sleep(GAP_MS);
             }
 
-            alert("전송 완료.");
+            alert("전송 요청을 모두 보냈습니다. (백엔드 처리가 순차 진행 중일 수 있어요)");
         } catch (e) {
             alert("업로드 실패: " + e.message);
         } finally {
@@ -103,7 +101,7 @@ export default function QRGenerator() {
         }
     }, [items, dispatch]);
 
-    // ----- Styles -----
+    // ====== 스타일 ======
     const sx = {
         page: { padding: 16, display: "flex", flexDirection: "column", gap: 16 },
         title: { fontSize: 20, fontWeight: 600 },
@@ -132,10 +130,7 @@ export default function QRGenerator() {
             fontSize: 14,
             cursor: "pointer",
         },
-        btnDisabled: {
-            opacity: 0.6,
-            cursor: "not-allowed",
-        },
+        btnDisabled: { opacity: 0.6, cursor: "not-allowed" },
         checkboxLabel: { display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14 },
         grid: {
             display: "grid",
@@ -160,6 +155,7 @@ export default function QRGenerator() {
         progress: { fontSize: 12, color: "#6b7280" },
     };
 
+    // ====== 렌더 ======
     return (
         <div style={sx.page}>
             <h1 style={sx.title}>QR Batch Uploader (AES + Dynamic)</h1>
@@ -170,7 +166,7 @@ export default function QRGenerator() {
                     <input
                         value={baseUrl}
                         onChange={(e) => setBaseUrl(e.target.value)}
-                        placeholder="https://yourdomain.com/r"
+                        placeholder="https://www.team-koas.com"
                         style={sx.input}
                     />
                     <span style={sx.hintSm}>
@@ -204,7 +200,6 @@ export default function QRGenerator() {
             </div>
 
             <div style={sx.row}>
-                {/* ⚔️ 이 버튼 하나로 전량 업로드 */}
                 <button
                     onClick={uploadAll}
                     style={{ ...sx.btnPrimary, ...(uploading ? sx.btnDisabled : {}) }}
@@ -221,17 +216,19 @@ export default function QRGenerator() {
                     />
                     Show all previews (보기용)
                 </label>
+
                 {uploading && <span style={sx.progress}>진행률: {progress}%</span>}
             </div>
 
-            {/* 미리보기(보기용만 유지, 개별 버튼 제거) */}
+            {/* 미리보기(최대 50개) */}
             <div style={sx.grid}>
                 {preview.map((it) => (
                     <div key={it.code} style={sx.card}>
-                        {/* 시각 확인용 썸네일: 굳이 캔버스 참조는 필요 없으나 남겨도 무방 */}
                         <img
                             alt={it.code}
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=${encodeURIComponent(it.url)}`}
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=${encodeURIComponent(
+                                it.url
+                            )}`}
                             width={128}
                             height={128}
                             style={{ borderRadius: 8 }}

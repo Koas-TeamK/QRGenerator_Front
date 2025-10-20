@@ -85,11 +85,11 @@ function buildPageOnlyParams({ page = 1 }) {
 function* saveQrWorker({ payload }) {
     try {
         if (Array.isArray(payload)) {
-            //console.log("[qrSaga] saveQrWorker →", payload);
             const results = [];
             for (const dto of payload) {
                 const res = yield call(postOne, dto);
                 results.push(res?.data ?? res);
+                console.log("[qrSaga] saveQrWorker →", res.data);
             }
             yield put(qrSaveSuccess(results));
             return;
