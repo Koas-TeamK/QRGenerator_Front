@@ -84,7 +84,7 @@ export default function QRGenerator() {
                     serial: it.code,          // = code
                     //message,                  
                     createdDate: "",
-                    itemName: "maru_on",
+                    itemName: "maruon",
                 }));
 
                 // 3) 사가로 JSON 배열 전송
