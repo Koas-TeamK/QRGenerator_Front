@@ -68,7 +68,7 @@ export default function QRGenerator() {
 
         try {
             const CHUNK = 1;
-            const GAP_MS = 1000;
+            const GAP_MS = 500;
 
             for (let i = 0; i < items.length; i += CHUNK) {
                 const slice = items.slice(i, i + CHUNK);
