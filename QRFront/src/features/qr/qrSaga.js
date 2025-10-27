@@ -37,12 +37,9 @@ function fetchSearch(params) {
     return api.post("/api/admin/search", params);
 }
 
-function fetchSearchBySerial({ startSerial, endSerial }) {
-    const qs = {};
-    if (startSerial) qs.startSerial = startSerial;
-    if (endSerial) qs.endSerial = endSerial;
-    if (DEBUG) console.log("[fetchSearchBySerial] query -> ", qs);
-    return api.post("/api/admin/search/serial", { params: qs });
+function fetchSearchBySerial(params) {
+    if (DEBUG) console.log("[fetchSearchBySerial] query -> ", params);
+    return api.post("/api/admin/search/serial", params);
 }
 
 /** ========= 응답 정규화(배열/객체 모두 대응) ========= */

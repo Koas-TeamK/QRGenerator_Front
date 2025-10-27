@@ -144,6 +144,16 @@ export default function QRDateSearchModal({ open, onClose }) {
         }
     };
 
+    //제로 패딩
+    const normalizeSerial4 = (val) => {
+        if (val == null) return "";
+        const digits = String(val).replace(/\D/g, "");     // 숫자만 추출
+        if (!digits) return "";
+        const n = Number(digits);
+        if (!Number.isFinite(n)) return "";
+        return String(n).padStart(4, "0");                 // 항상 4자리 문자열
+    };
+
     /**
      * 🔎 검색 트리거
      * - startSerial/endSerial 사용으로 통일
@@ -158,9 +168,13 @@ export default function QRDateSearchModal({ open, onClose }) {
         const start = dr[0] ? dr[0].format("YYYY-MM-DD") : undefined;
         const end = dr[1] ? dr[1].format("YYYY-MM-DD") : undefined;
 
-        // ▼ 통일된 이름
-        const startSerial = vals.startSerial?.toString().trim();
-        const endSerial = vals.endSerial?.toString().trim();
+        // 원시 입력값 → 트리밍
+        const rawStart = vals.startSerial?.toString().trim();
+        const rawEnd = vals.endSerial?.toString().trim();
+
+        // ▼▼ 4자리 zero-padding **문자열**로 정규화
+        const startSerial = normalizeSerial4(rawStart);  // "1" → "0001"
+        const endSerial = normalizeSerial4(rawEnd);    // "20" → "0020"
 
         if (!start && !end && !startSerial && !endSerial) {
             antdMessage.warning("날짜 또는 시리얼 범위를 입력하세요.");
@@ -168,13 +182,7 @@ export default function QRDateSearchModal({ open, onClose }) {
         }
 
         if (startSerial || endSerial) {
-            // ⚠️ 사가/백엔드가 serialStart/serialEnd를 기대한다면 여기서 매핑
-            dispatch(qrSearchSerialRequest({
-                startSerial: startSerial,
-                endSerial: endSerial,
-            }));
-            // 만약 사가도 startSerial/endSerial로 바꿨다면 위를
-            // dispatch(qrSearchSerialRequest({ startSerial, endSerial })) 로 변경
+            dispatch(qrSearchSerialRequest({ startSerial, endSerial }))
         } else {
             const payload = {};
             if (start) payload.startDate = start;
