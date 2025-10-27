@@ -111,13 +111,13 @@ const qrSlice = createSlice({
          * - UI에서 최근 사용 필터 노출을 위해 filters에 serialStart/serialEnd 병합 저장
          */
         qrSearchSerialRequest(state, action) {
-            const { serialStart, serialEnd } = action.payload || {};
+            const { startSerial, endSerial } = action.payload || {};
             state.search.loading = true;
             state.search.error = null;
             state.search.filters = {
                 ...state.search.filters,
-                serialStart: serialStart ?? "",
-                serialEnd: serialEnd ?? "",
+                startSerial: startSerial ?? "",
+                endSerial: endSerial ?? "",
             };
         },
 

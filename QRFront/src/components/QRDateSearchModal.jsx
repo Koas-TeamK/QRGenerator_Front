@@ -170,8 +170,8 @@ export default function QRDateSearchModal({ open, onClose }) {
         if (startSerial || endSerial) {
             // ⚠️ 사가/백엔드가 serialStart/serialEnd를 기대한다면 여기서 매핑
             dispatch(qrSearchSerialRequest({
-                serialStart: startSerial,
-                serialEnd: endSerial,
+                startSerial: startSerial,
+                endSerial: endSerial,
             }));
             // 만약 사가도 startSerial/endSerial로 바꿨다면 위를
             // dispatch(qrSearchSerialRequest({ startSerial, endSerial })) 로 변경
