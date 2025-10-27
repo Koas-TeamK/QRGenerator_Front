@@ -13,8 +13,12 @@ import dayjs from "dayjs";
 import { useDispatch, useSelector } from "react-redux";
 import {
     qrSearchRequest, qrSearchReset, selectQrSearch,
-    qrUpdateRequest, qrUpdateSuccess
+    qrUpdateRequest, qrUpdateSuccess,
+    // ▼ 시리얼 범위 전용 검색 액션 (사가에서 /api/admin/search/serial 호출)
+    qrSearchSerialRequest,
 } from "@/features/qr/qrSlice";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -51,21 +55,101 @@ export default function QRDateSearchModal({ open, onClose }) {
     const isAdmin = role === "ADMIN";
 
     // 서로 다른 Form 인스턴스
-    const [filterForm] = Form.useForm(); // 날짜 범위 선택용
+    const [filterForm] = Form.useForm(); // 날짜/시리얼 범위 선택용
     const [editForm] = Form.useForm();   // 테이블 인라인 편집용
 
     // 로컬 표시 버퍼
     const [rows, setRows] = useState([]);
     useEffect(() => { setRows(items); }, [items]);
 
+    // 테이블 선택된 행 키(시리얼) 관리 → ZIP 다운로드에 사용
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const onSelectChange = (keys) => setSelectedRowKeys(keys);
+
     // 열릴 때 초기화
     useEffect(() => {
         if (!open) return;
         dispatch(qrSearchReset());
-        filterForm.setFieldsValue({ dateRange: [] });
+        // ▼ 필드명: startSerial / endSerial 로 통일
+        filterForm.setFieldsValue({ dateRange: [], startSerial: "", endSerial: "" });
+        setSelectedRowKeys([]);
     }, [open, dispatch, filterForm]);
 
-    // startDate/endDate만 전송
+    // 이미지 한 장을 Blob으로 얻는 유틸
+    const getImageBlob = async (record) => {
+        const { imageUrl } = record;
+        const src = toImageSrc(imageUrl);
+        if (!src) return null;
+
+        if (src.startsWith("data:image")) {
+            const res = await fetch(src);
+            return await res.blob();
+        }
+        const res = await fetch(src, { mode: "cors" });
+        if (!res.ok) return null;
+        return await res.blob();
+    };
+
+    // 선택/전체 결과를 ZIP으로 다운로드
+    const downloadZipAll = async () => {
+        try {
+            const target = selectedRowKeys.length
+                ? rows.filter((r) => selectedRowKeys.includes(r.serial))
+                : rows;
+
+            if (!target.length) {
+                antdMessage.warning("다운로드할 항목이 없습니다. (선택하거나, 검색 결과가 있어야 합니다)");
+                return;
+            }
+
+            const zip = new JSZip();
+            const folder = zip.folder("qrs");
+            const tasks = target.map(async (r) => {
+                const blob = await getImageBlob(r);
+                if (!blob) return;
+                const filename = `qr_${r.serial || "image"}.png`;
+                folder.file(filename, blob);
+            });
+
+            antdMessage.loading({ content: "ZIP 준비 중...", key: "zip" });
+            await Promise.all(tasks);
+
+            const content = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+            const serials = target.map(r => r?.serial).filter(Boolean).map(s => String(s).trim());
+            const safe = (s) => (s ?? "").toString().replace(/[\\/:*?"<>|]/g, "").trim();
+
+            let startStr = "start", endStr = "end";
+            if (serials.length) {
+                const withNum = serials.map(s => ({ s, n: Number(s.replace(/[^0-9]/g, "")) }));
+                const allNumeric = withNum.every(x => Number.isFinite(x.n));
+                if (allNumeric) {
+                    const min = withNum.reduce((a, b) => (b.n < a.n ? b : a));
+                    const max = withNum.reduce((a, b) => (b.n > a.n ? b : a));
+                    startStr = min.s; endStr = max.s;
+                } else {
+                    const sorted = [...serials].sort((a, b) =>
+                        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+                    );
+                    startStr = sorted[0];
+                    endStr = sorted[sorted.length - 1];
+                }
+            }
+
+            const zipName = `qr_${safe(startStr)}-${safe(endStr)}.zip`;
+            saveAs(content, zipName);
+            antdMessage.success({ content: "ZIP 다운로드 완료", key: "zip" });
+        } catch (e) {
+            console.error(e);
+            antdMessage.error({ content: "ZIP 생성 중 오류가 발생했습니다.", key: "zip" });
+        }
+    };
+
+    /**
+     * 🔎 검색 트리거
+     * - startSerial/endSerial 사용으로 통일
+     * - 시리얼이 하나라도 있으면 시리얼 전용 API 호출 액션으로 디스패치
+     * - 아니면 기존 날짜 검색 액션으로 디스패치
+     */
     const onSearch = useCallback(async () => {
         const vals = await filterForm.validateFields().catch(() => null);
         if (!vals) return;
@@ -74,23 +158,37 @@ export default function QRDateSearchModal({ open, onClose }) {
         const start = dr[0] ? dr[0].format("YYYY-MM-DD") : undefined;
         const end = dr[1] ? dr[1].format("YYYY-MM-DD") : undefined;
 
-        if (!start && !end) {
-            antdMessage.warning("날짜를 선택하세요 (시작 또는 종료)");
+        // ▼ 통일된 이름
+        const startSerial = vals.startSerial?.toString().trim();
+        const endSerial = vals.endSerial?.toString().trim();
+
+        if (!start && !end && !startSerial && !endSerial) {
+            antdMessage.warning("날짜 또는 시리얼 범위를 입력하세요.");
             return;
         }
 
-        const payload = {};
-        if (start) payload.startDate = start;
-        if (end) payload.endDate = end;
+        if (startSerial || endSerial) {
+            // ⚠️ 사가/백엔드가 serialStart/serialEnd를 기대한다면 여기서 매핑
+            dispatch(qrSearchSerialRequest({
+                serialStart: startSerial,
+                serialEnd: endSerial,
+            }));
+            // 만약 사가도 startSerial/endSerial로 바꿨다면 위를
+            // dispatch(qrSearchSerialRequest({ startSerial, endSerial })) 로 변경
+        } else {
+            const payload = {};
+            if (start) payload.startDate = start;
+            if (end) payload.endDate = end;
+            dispatch(qrSearchRequest(payload));
+        }
 
-        //console.log("[QRDateSearchModal] onSearch ▶ payload:", payload);
-        dispatch(qrSearchRequest(payload));
+        setSelectedRowKeys([]); // 새 검색 시 선택 초기화
     }, [dispatch, filterForm]);
 
     const onReset = () => {
         filterForm.resetFields();
         dispatch(qrSearchReset());
-        //console.log("[QRDateSearchModal] reset");
+        setSelectedRowKeys([]);
     };
 
     const quickDate = (type) => {
@@ -161,7 +259,6 @@ export default function QRDateSearchModal({ open, onClose }) {
             setEditingKey("");
             dispatch(qrUpdateSuccess(dto));
             dispatch(qrUpdateRequest(dto));
-            //console.log("[QRDateSearchModal] save ▶ dto:", dto);
         } catch { /* no-op */ }
     };
 
@@ -272,10 +369,16 @@ export default function QRDateSearchModal({ open, onClose }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
                     <Space size="middle">
                         <CalendarOutlined />
-                        <span style={{ fontWeight: 600 }}>QR 검색 (날짜)</span>
+                        <span style={{ fontWeight: 600 }}>QR 검색 (날짜/시리얼)</span>
                         <Text type="secondary">{items.length ? `총 ${items.length.toLocaleString()}건` : null}</Text>
                     </Space>
                     <Space size="small" wrap>
+                        {/* ZIP 다운로드 버튼 (선택이 있으면 선택분만, 없으면 전체) */}
+                        <Tooltip title={selectedRowKeys.length ? "선택 항목 ZIP 다운로드" : "전체 ZIP 다운로드"}>
+                            <Button size="small" onClick={downloadZipAll} icon={<DownloadOutlined />}>
+                                이미지 ZIP
+                            </Button>
+                        </Tooltip>
                         <Button size="small" type="text" onClick={() => quickDate("today")}>오늘</Button>
                         <Button size="small" type="text" onClick={() => quickDate("7d")}>최근 7일</Button>
                         <Button size="small" type="text" onClick={() => quickDate("30d")}>최근 30일</Button>
@@ -288,18 +391,15 @@ export default function QRDateSearchModal({ open, onClose }) {
             destroyOnClose
             footer={null}
         >
-            {/* 날짜 범위 선택 */}
+            {/* 날짜/시리얼 범위 선택 */}
             <div style={{ padding: 12, border: "1px solid #f0f0f0", borderRadius: 12, background: "#fafafa", marginBottom: 12 }}>
                 <Form
                     form={filterForm}
                     layout="vertical"
-                    onFinish={() => {
-                        //console.log("[QRDateSearchModal] form submit");
-                        onSearch();
-                    }}
+                    onFinish={onSearch}
                 >
                     <Row gutter={12} align="bottom">
-                        <Col xs={24} md={18}>
+                        <Col xs={24} md={12}>
                             <Form.Item
                                 label={<Space size={6} style={{ fontWeight: 500 }}><CalendarOutlined /> 출고날짜 범위</Space>}
                                 name="dateRange"
@@ -308,7 +408,32 @@ export default function QRDateSearchModal({ open, onClose }) {
                                 <RangePicker style={{ width: "100%" }} format="YYYY-MM-DD" allowEmpty={[true, true]} allowClear />
                             </Form.Item>
                         </Col>
-                        <Col xs={24} md={6} style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+
+                        {/* ▼ 시리얼 범위 입력 (필드명: startSerial / endSerial 로 통일) */}
+                        <Col xs={24} md={12}>
+                            <Row gutter={8}>
+                                <Col span={12}>
+                                    <Form.Item
+                                        label="시리얼 시작"
+                                        name="startSerial"
+                                        tooltip="예: 0001 또는 1"
+                                    >
+                                        <Input placeholder="예: 0001" allowClear />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item
+                                        label="시리얼 끝"
+                                        name="endSerial"
+                                        tooltip="예: 0500 또는 500"
+                                    >
+                                        <Input placeholder="예: 0500" allowClear />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </Col>
+
+                        <Col xs={24} md={24} style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
                             <Space>
                                 <Button icon={<ReloadOutlined />} onClick={onReset}>초기화</Button>
                                 <Button type="primary" htmlType="submit" icon={<SearchOutlined />} loading={loading}>
@@ -333,6 +458,11 @@ export default function QRDateSearchModal({ open, onClose }) {
                     pagination={false}
                     scroll={{ y: 420 }}
                     sticky
+                    rowSelection={{
+                        selectedRowKeys,
+                        onChange: onSelectChange,
+                        preserveSelectedRowKeys: true,
+                    }}
                 />
             </Form>
 

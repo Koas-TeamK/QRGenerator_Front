@@ -9,6 +9,7 @@ import {
     qrListRequest, qrListSuccess, qrListFailure,
     // search
     qrSearchRequest, qrSearchSuccess, qrSearchFailure,
+    qrSearchSerialRequest,
 } from "./qrSlice";
 
 /** ========= 공통 설정 ========= */
@@ -30,10 +31,18 @@ function putOne(dto) {
     const serial = encodeURIComponent(dto.serial);
     return api.put(`/api/admin/qr/${serial}`, dto);
 }
-// 검색
+// (날짜/기타) 검색
 function fetchSearch(params) {
-    console.log("[fetchSearch] parmas -> ", params);
+    if (DEBUG) console.log("[fetchSearch] params -> ", params);
     return api.post("/api/admin/search", params);
+}
+
+function fetchSearchBySerial({ startSerial, endSerial }) {
+    const qs = {};
+    if (startSerial) qs.startSerial = startSerial;
+    if (endSerial) qs.endSerial = endSerial;
+    if (DEBUG) console.log("[fetchSearchBySerial] query -> ", qs);
+    return api.post("/api/admin/search/serial", { params: qs });
 }
 
 /** ========= 응답 정규화(배열/객체 모두 대응) ========= */
@@ -89,7 +98,7 @@ function* saveQrWorker({ payload }) {
             for (const dto of payload) {
                 const res = yield call(postOne, dto);
                 results.push(res?.data ?? res);
-                console.log("[qrSaga] saveQrWorker →", res.data);
+                if (DEBUG) console.log("[qrSaga] saveQrWorker →", res.data);
             }
             yield put(qrSaveSuccess(results));
             return;
@@ -103,7 +112,9 @@ function* saveQrWorker({ payload }) {
 
 function* updateQrWorker({ payload }) {
     try {
-        //console.log("[qrSaga] updateQrWorker →", payload);
+        if (DEBUG) {
+            console.log("[qrSaga] updateQrWorker →", payload);
+        }
         const res = yield call(putOne, payload);
         const data = res?.data ?? res;
         yield put(qrUpdateSuccess(data ?? payload));
@@ -121,13 +132,15 @@ function* listQrWorker({ payload }) {
         } = payload || {};
 
         const params = buildPageOnlyParams({ page });
-        //console.log("[qrSaga] payload →", payload.page);
-        //console.log("[qrSaga] buildPageOnlyParams →", page);
+        if (DEBUG) {
+            console.log("[qrSaga] payload.page →", payload?.page);
+            console.log("[qrSaga] buildPageOnlyParams →", params);
+        }
         const res = yield call(fetchList, params);
         const data = res?.data ?? res;
-        //console.log("[qrSaga] list res.data →", data)
-        if (DEBUG) console.log("[qrSaga] list res.data →", data);
-
+        if (DEBUG) {
+            console.log("[qrSaga] list res.data →", data);
+        }
         const { items, total, nextCursor } = normalizeListResponse(data, { page });
 
         yield put(qrListSuccess({
@@ -142,13 +155,35 @@ function* listQrWorker({ payload }) {
     }
 }
 
-/** ========= search ========= */
+/** ========= search (날짜/기타) ========= */
 function* searchQrWorker({ payload }) {
     try {
-        //console.log("[QRSaga] searchQrWorker", payload);
+        if (DEBUG) {
+            console.log("[QRSaga] searchQrWorker (date/etc)", payload);
+        }
         const res = yield call(fetchSearch, payload);
         const data = res?.data ?? res;
-        //console.log("[QRSaga] searchQrWorker data -> ", data);
+        if (DEBUG) {
+            console.log("[QRSaga] searchQrWorker data -> ", data);
+        }
+        yield put(qrSearchSuccess(data || []));
+    } catch (err) {
+        yield put(qrSearchFailure(err?.response?.data?.message || err.message || "검색 실패"));
+    }
+}
+
+/** ========= search (시리얼 범위 전용) ========= */
+function* searchSerialQrWorker({ payload }) {
+    try {
+        if (DEBUG) {
+            console.log("[QRSaga] searchSerialQrWorker (serial range)", payload);
+        }
+        // /api/admin/search/serial 로 호출
+        const res = yield call(fetchSearchBySerial, payload);
+        const data = res?.data ?? res;
+        if (DEBUG) {
+            console.log("[QRSaga] searchSerialQrWorker data -> ", data);
+        }
         yield put(qrSearchSuccess(data || []));
     } catch (err) {
         yield put(qrSearchFailure(err?.response?.data?.message || err.message || "검색 실패"));
@@ -161,5 +196,6 @@ export function* qrSaga() {
         takeLatest(qrUpdateRequest.type, updateQrWorker),
         takeLatest(qrListRequest.type, listQrWorker),
         takeLatest(qrSearchRequest.type, searchQrWorker),
+        takeLatest(qrSearchSerialRequest.type, searchSerialQrWorker),
     ]);
 }

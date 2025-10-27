@@ -84,6 +84,7 @@ const qrSlice = createSlice({
         qrListReset(state) {
             state.list = { ...initialState.list };
         },
+
         // --- 🔎 검색 모달 ---
         qrSearchOpen(state, action) {
             state.search.open = true;
@@ -91,6 +92,11 @@ const qrSlice = createSlice({
         },
         qrSearchClose(state) { state.search.open = false; },
 
+        /**
+         * 🔎 (기존) 날짜/기타 조건 검색 요청
+         * - saga: /api/admin/search 호출
+         * - 성공/실패 액션은 아래 qrSearchSuccess/qrSearchFailure 사용
+         */
         qrSearchRequest(state, action) {
             const { filters } = action.payload || {};
             state.search.loading = true;
@@ -98,6 +104,24 @@ const qrSlice = createSlice({
             if (filters) state.search.filters = filters;
         },
 
+        /**
+         * 🔎 (신규) 시리얼 범위 전용 검색 요청
+         * - saga: /api/admin/search/serial 호출
+         * - 성공/실패 액션은 qrSearchSuccess/qrSearchFailure 재사용
+         * - UI에서 최근 사용 필터 노출을 위해 filters에 serialStart/serialEnd 병합 저장
+         */
+        qrSearchSerialRequest(state, action) {
+            const { serialStart, serialEnd } = action.payload || {};
+            state.search.loading = true;
+            state.search.error = null;
+            state.search.filters = {
+                ...state.search.filters,
+                serialStart: serialStart ?? "",
+                serialEnd: serialEnd ?? "",
+            };
+        },
+
+        // --- 공용: 검색 성공/실패/리셋 ---
         qrSearchSuccess(state, action) {
             const items = Array.isArray(action.payload)
                 ? action.payload
@@ -111,6 +135,7 @@ const qrSlice = createSlice({
             state.search.loading = false;
             state.search.error = action.payload || "검색 실패";
         },
+
         qrSearchReset(state) { state.search = { ...initialState.search }; },
     },
 });
@@ -120,8 +145,10 @@ export const {
     qrUpdateRequest, qrUpdateSuccess, qrUpdateFailure,
     // list
     qrListRequest, qrListSuccess, qrListFailure, qrListReset,
-    // search
+    // search (모달 상태/공용 요청/응답)
     qrSearchOpen, qrSearchClose, qrSearchRequest, qrSearchSuccess, qrSearchFailure, qrSearchReset,
+    // search (시리얼 범위 전용 트리거)
+    qrSearchSerialRequest,
 } = qrSlice.actions;
 
 export default qrSlice.reducer;
