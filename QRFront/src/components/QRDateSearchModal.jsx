@@ -371,10 +371,71 @@ export default function QRDateSearchModal({ open, onClose }) {
         };
     }), [columns, editingKey]);
 
+    //QR URL 다운로드
+    const downloadExcelUrls = () => {
+        const target = selectedRowKeys.length
+            ? rows.filter((r) => selectedRowKeys.includes(r.serial))
+            : rows;
+
+        if (!target.length) {
+            antdMessage.warning("다운로드할 항목이 없습니다. (선택하거나, 검색 결과가 있어야 합니다)");
+            return;
+        }
+
+        try {
+            // 1. CSV 헤더 정의 (Excel에서 보일 열 제목)
+            const headers = ["Serial", "QR URL"];
+
+            // 2. 데이터 행 생성
+            const csvRows = target.map(r =>
+                `${r.serial}, ${r.qrUrl}`
+            );
+
+            // 3. 전체 CSV 문자열 생성 (헤더 + 행들)
+            const csvString = [
+                headers.join(","), // 헤더를 쉼표로 연결
+                ...csvRows         // 데이터 행 추가
+            ].join("\n");          // 행들을 줄바꿈 문자로 연결
+
+            // 4. Blob 생성 및 파일 다운로드
+            // BOM(Byte Order Mark)을 추가하여 한글 깨짐 방지
+            const bom = "\uFEFF";
+            const blob = new Blob([bom + csvString], { type: "text/csv;charset=utf-8;" });
+
+            // 파일 이름 결정
+            const serials = target.map(r => r?.serial).filter(Boolean).map(s => String(s).trim());
+            const safe = (s) => (s ?? "").toString().replace(/[\\/:*?"<>|]/g, "").trim();
+            let startStr = "start", endStr = "end";
+            if (serials.length) {
+                // 시리얼 범위 계산 로직 (downloadZipAll에서 재사용)
+                const withNum = serials.map(s => ({ s, n: Number(s.replace(/[^0-9]/g, "")) }));
+                const allNumeric = withNum.every(x => Number.isFinite(x.n));
+                if (allNumeric) {
+                    const min = withNum.reduce((a, b) => (b.n < a.n ? b : a));
+                    const max = withNum.reduce((a, b) => (b.n > a.n ? b : a));
+                    startStr = min.s; endStr = max.s;
+                } else {
+                    const sorted = [...serials].sort((a, b) =>
+                        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+                    );
+                    startStr = sorted[0];
+                    endStr = sorted[sorted.length - 1];
+                }
+            }
+            const fileName = `qr_urls_${safe(startStr)}-${safe(endStr)}.csv`;
+
+            saveAs(blob, fileName);
+            antdMessage.success("QR URL CSV 다운로드 완료");
+        } catch (e) {
+            console.error(e);
+            antdMessage.error("CSV 생성 중 오류가 발생했습니다.");
+        }
+    };
+
     return (
         <Modal
             title={
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "0 30px" }}>
                     <Space size="middle">
                         <CalendarOutlined />
                         <span style={{ fontWeight: 600 }}>QR 검색 (날짜/시리얼)</span>
@@ -382,7 +443,10 @@ export default function QRDateSearchModal({ open, onClose }) {
                     </Space>
                     <Space size="small" wrap>
                         {/* ZIP 다운로드 버튼 (선택이 있으면 선택분만, 없으면 전체) */}
-                        <Tooltip title={selectedRowKeys.length ? "선택 항목 ZIP 다운로드" : "전체 ZIP 다운로드"}>
+                        <Tooltip title={selectedRowKeys.length ? "선택 항목 다운로드" : "전체 다운로드"}>
+                            <Button size="small" onClick={downloadExcelUrls} icon={<DownloadOutlined />}>
+                                QR URL
+                            </Button>
                             <Button size="small" onClick={downloadZipAll} icon={<DownloadOutlined />}>
                                 이미지 ZIP
                             </Button>
